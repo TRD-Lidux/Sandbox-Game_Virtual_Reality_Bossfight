@@ -16,7 +16,7 @@
     #playerBar{position:absolute;bottom:0;width:100%;height:100%;background:linear-gradient(#ff4444,#aa0000);transition:height .15s linear}
     #playerHpText{position:fixed;left:40px;bottom:16px;color:#fff;font-size:12px;opacity:.85}
     #flash{position:fixed;left:0;top:0;width:100%;height:100%;background:#fff;opacity:0;pointer-events:none;z-index:9999}
-    canvas{display:block} #vrButton{position:fixed;right:14px;top:14px;z-index:100;border:1px solid #ff7777;border-radius:9px;padding:12px 16px;background:#350909;color:#fff;font-weight:700;font-size:14px} #vrStatus{position:fixed;right:14px;top:64px;z-index:100;color:#fff;background:#000a;padding:7px 10px;border-radius:7px;font-size:12px;max-width:250px}
+    canvas{display:block} #vrButton{position:fixed;right:14px;top:14px;z-index:100;border:1px solid #ff7777;border-radius:9px;padding:12px 16px;background:#350909;color:#fff;font-weight:a700;font-size:14px} #vrStatus{position:fixed;right:14px;top:64px;z-index:100;color:#fff;background:#000a;padding:7px 10px;border-radius:7px;font-size:12px;max-width:250px}
   </style>
 </head>
 <body>
@@ -169,7 +169,8 @@ const vel = new THREE.Vector3();
 let xrSession = null, jumpVelocity = 0, jumpHeight = 0;
 const xrInput = {moveX:0,moveY:0,turnX:0,shoot:false,jump:false,toggleHealth:false,_jumpWasDown:false,_healthWasDown:false};
 // Visible controller-mounted blasters make the firing origin obvious in VR.
-const xrControllers = {left:null,right:null};
+const xrControllers = {left:null,right:null}; // target-ray spaces, used for button/input events
+const xrGrips = {left:null,right:null}; // physical controller grip spaces, used to mount the blasters
 const xrGuns = {left:null,right:null};
 function makeVRGun(){
  const gun=new THREE.Group();
@@ -182,7 +183,8 @@ function makeVRGun(){
 function setupXRControllerHands(){
  for(const hand of ['left','right']){
   const controller=renderer.xr.getController(hand==='left'?0:1); xrControllers[hand]=controller; scene.add(controller);
-  const gun=makeVRGun(); controller.add(gun); xrGuns[hand]=gun; gun.visible=true;
+  const grip=renderer.xr.getControllerGrip(hand==='left'?0:1); xrGrips[hand]=grip; scene.add(grip);
+  const gun=makeVRGun(); grip.add(gun); xrGuns[hand]=gun; gun.visible=true;
   controller.addEventListener('connected',e=>{if(e.data&&e.data.handedness) gun.visible=true;});
  }
 }
@@ -198,12 +200,12 @@ function getViewCamera(){
 function getViewPosition(){ const p = new THREE.Vector3(); getViewCamera().getWorldPosition(p); return p; }
 function getViewDirection(){ const d = new THREE.Vector3(); getViewCamera().getWorldDirection(d); return d.normalize(); }
 function getWeaponPose(){
- if(renderer.xr.isPresenting&&xrControllers.right){
-  const gun=xrGuns.right; const origin=new THREE.Vector3(); const direction=new THREE.Vector3();
-  // Shoot from the visible muzzle, using the right controller's orientation—not head gaze.
-  xrControllers.right.updateWorldMatrix(true,true);
+ if(renderer.xr.isPresenting&&xrGrips.right){
+  const gun=xrGuns.right; const grip=xrGrips.right; const origin=new THREE.Vector3(); const direction=new THREE.Vector3();
+  // Use the physical grip pose, so the visible blaster follows the hand and fires from its muzzle.
+  grip.updateWorldMatrix(true,true);
   if(gun){gun.updateWorldMatrix(true,false);const q=new THREE.Quaternion();gun.getWorldQuaternion(q);direction.set(0,0,-1).applyQuaternion(q).normalize();origin.setFromMatrixPosition(gun.matrixWorld).addScaledVector(direction,0.38);}
-  else {xrControllers.right.getWorldPosition(origin);xrControllers.right.getWorldDirection(direction);}
+  else {grip.getWorldPosition(origin);grip.getWorldDirection(direction);}
   return {origin,direction:direction.normalize()};
  }
  return {origin:getViewPosition(),direction:getViewDirection()};
@@ -257,17 +259,17 @@ updateBossBar(); let bossFloatT = 0;
 
 // ---------------- Player health ----------------
 // Player health card attached to the headset view; Y toggles it in VR.
-const playerHudCanvas=document.createElement('canvas'); playerHudCanvas.width=640; playerHudCanvas.height=220;
+const playerHudCanvas=document.createElement('canvas'); playerHudCanvas.width=640; playerHudCanvas.height=300;
 const playerHudCtx=playerHudCanvas.getContext('2d');
 const playerHudTexture=new THREE.CanvasTexture(playerHudCanvas); playerHudTexture.minFilter=THREE.LinearFilter;
 const playerHudSprite=new THREE.Sprite(new THREE.SpriteMaterial({map:playerHudTexture,transparent:true,depthTest:false,depthWrite:false}));
-playerHudSprite.position.set(0,-0.28,-1.35); playerHudSprite.scale.set(0.9,0.31,1); playerHudSprite.renderOrder=1001; playerHudSprite.visible=false; camera.add(playerHudSprite);
-function drawPlayerVRHud(){if(!playerHudCtx)return;const c=playerHudCtx,w=playerHudCanvas.width,h=playerHudCanvas.height,p=Math.max(0,Math.min(1,playerHp/playerMaxHp));c.clearRect(0,0,w,h);c.fillStyle='rgba(0,0,0,.82)';c.beginPath();if(c.roundRect)c.roundRect(8,8,w-16,h-16,24);else c.rect(8,8,w-16,h-16);c.fill();c.font='bold 42px system-ui,sans-serif';c.textAlign='left';c.textBaseline='middle';c.fillStyle='#fff';c.fillText('PLAYER HEALTH',28,55);c.textAlign='right';c.fillText(Math.max(0,Math.floor(playerHp))+' / '+playerMaxHp,w-28,55);c.fillStyle='#451010';c.fillRect(28,100,w-56,72);const g=c.createLinearGradient(28,0,w-28,0);g.addColorStop(0,'#ff3333');g.addColorStop(1,'#ff9b3b');c.fillStyle=g;c.fillRect(28,100,(w-56)*p,72);c.strokeStyle='#fff';c.lineWidth=3;c.strokeRect(28,100,w-56,72);playerHudTexture.needsUpdate=true;}
-let playerMaxHp = 100; let playerHp = playerMaxHp; let isRespawning = false; const playerBar = document.getElementById('playerBar'); const playerHpText = document.getElementById('playerHpText'); function updatePlayerUI(colorOverride=null){ const pct = Math.max(0,playerHp/playerMaxHp)*100; playerBar.style.height = pct+'%'; if(colorOverride) playerBar.style.background = colorOverride; else playerBar.style.background = 'linear-gradient(#ff4444,#aa0000)'; playerHpText.textContent = 'HP: '+Math.floor(playerHp); drawPlayerVRHud(); } updatePlayerUI(); function resetBoss(){ bossHp = bossMaxHp; updateBossBar(); shieldActive = true; shieldHp = shieldMaxHp; shieldMesh.visible = true; updateShieldUI(); }
+playerHudSprite.position.set(0,-0.32,-1.35); playerHudSprite.scale.set(0.9,0.42,1); playerHudSprite.renderOrder=1001; playerHudSprite.visible=false; camera.add(playerHudSprite);
+function drawPlayerVRHud(){if(!playerHudCtx)return;const c=playerHudCtx,w=playerHudCanvas.width,h=playerHudCanvas.height,p=Math.max(0,Math.min(1,playerHp/playerMaxHp));c.clearRect(0,0,w,h);c.fillStyle='rgba(0,0,0,.84)';c.beginPath();if(c.roundRect)c.roundRect(8,8,w-16,h-16,24);else c.rect(8,8,w-16,h-16);c.fill();c.font='bold 34px system-ui,sans-serif';c.textAlign='left';c.textBaseline='middle';c.fillStyle='#fff';c.fillText('SHIELD',28,43);c.textAlign='right';c.fillText((shieldActive?Math.max(0,Math.floor(shieldHp)):0)+' / '+shieldMaxHp,w-28,43);c.fillStyle='#0a1630';c.fillRect(28,66,w-56,38);const sp=shieldActive?Math.max(0,Math.min(1,shieldHp/shieldMaxHp)):0;const sg=c.createLinearGradient(28,0,w-28,0);sg.addColorStop(0,'#2788ff');sg.addColorStop(1,'#9be6ff');c.fillStyle=sg;c.fillRect(28,66,(w-56)*sp,38);c.strokeStyle='#a9d9ff';c.lineWidth=2;c.strokeRect(28,66,w-56,38);c.font='bold 34px system-ui,sans-serif';c.textAlign='left';c.fillStyle='#fff';c.fillText('PLAYER HEALTH',28,151);c.textAlign='right';c.fillText(Math.max(0,Math.floor(playerHp))+' / '+playerMaxHp,w-28,151);c.fillStyle='#451010';c.fillRect(28,177,w-56,66);const g=c.createLinearGradient(28,0,w-28,0);g.addColorStop(0,'#ff3333');g.addColorStop(1,'#ff9b3b');c.fillStyle=g;c.fillRect(28,177,(w-56)*p,66);c.strokeStyle='#fff';c.lineWidth=3;c.strokeRect(28,177,w-56,66);playerHudTexture.needsUpdate=true;}
+let playerMaxHp = 100; let playerHp = playerMaxHp; let isRespawning = false; const playerBar = document.getElementById('playerBar'); const playerHpText = document.getElementById('playerHpText'); function updatePlayerUI(colorOverride=null){ const pct = Math.max(0,playerHp/playerMaxHp)*100; playerBar.style.height = pct+'%'; if(colorOverride) playerBar.style.background = colorOverride; else playerBar.style.background = 'linear-gradient(#ff4444,#aa0000)'; playerHpText.textContent = 'HP: '+Math.floor(playerHp); if(typeof playerHudTexture!=='undefined') drawPlayerVRHud(); } function resetBoss(){ bossHp = bossMaxHp; updateBossBar(); shieldActive = true; shieldHp = shieldMaxHp; shieldMesh.visible = true; updateShieldUI(); }
 function respawnPlayer(){ isRespawning = true; playerHp = 0; updatePlayerUI('linear-gradient(#ffd36a,#ffb300)'); const start = performance.now(); function anim(t){ const p = Math.min(1,(t-start)/1500); playerHp = p*playerMaxHp; updatePlayerUI('linear-gradient(#ffd36a,#ffb300)'); if(p<1) requestAnimationFrame(anim); else{ isRespawning = false; updatePlayerUI(); } } resetBoss(); requestAnimationFrame(anim); }
 
 // ---------------- Shield ----------------
-let shieldMaxHp = 10; let shieldHp = shieldMaxHp; let shieldActive = true; let shieldRegenTimer = 0; const shieldCooldown = 10; const shieldGeom = new THREE.SphereGeometry(7.2, 32, 24); const shieldMat = new THREE.MeshStandardMaterial({color:0x3388ff,transparent:true,opacity:0.18,emissive:0x2244ff,emissiveIntensity:0.4}); const shieldMesh = new THREE.Mesh(shieldGeom, shieldMat); boss.add(shieldMesh); const shieldHud = document.getElementById('shieldHud'); const shieldBar = document.getElementById('shieldBar'); function updateShieldUI(){ if(!shieldActive){ shieldHud.style.display='none'; return; } shieldHud.style.display='block'; shieldBar.style.width = (shieldHp/shieldMaxHp*100)+'%'; } updateShieldUI();
+let shieldMaxHp = 10; let shieldHp = shieldMaxHp; let shieldActive = true; let shieldRegenTimer = 0; const shieldCooldown = 10; const shieldGeom = new THREE.SphereGeometry(7.2, 32, 24); const shieldMat = new THREE.MeshStandardMaterial({color:0x3388ff,transparent:true,opacity:0.18,emissive:0x2244ff,emissiveIntensity:0.4}); const shieldMesh = new THREE.Mesh(shieldGeom, shieldMat); boss.add(shieldMesh); const shieldHud = document.getElementById('shieldHud'); const shieldBar = document.getElementById('shieldBar'); function updateShieldUI(){ if(!shieldActive){ shieldHud.style.display='none'; drawPlayerVRHud(); return; } shieldHud.style.display='block'; shieldBar.style.width = (shieldHp/shieldMaxHp*100)+'%'; drawPlayerVRHud(); } updateShieldUI(); updatePlayerUI();
 
 // ---------------- Player bullets ----------------
 const bullets = []; const bulletSpeed = 110; const bulletDamage = 5; const fireInterval = 1/3; let fireTimer = 0; let isShooting = false; let continuousShootTime = 0; let needsReload = false; const maxContinuous = 5; window.addEventListener('mousedown',e=>{ if(document.pointerLockElement===renderer.domElement && e.button===0 && !needsReload) isShooting=true; }); window.addEventListener('mouseup',e=>{ if(e.button===0) isShooting=false; }); window.addEventListener('keydown',e=>{ if(e.code==='KeyR' && needsReload){ playSfx(reloadSnd,0.9); needsReload=false; continuousShootTime=0; document.getElementById('reloadMsg').style.display='none'; } });
