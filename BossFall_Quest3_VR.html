@@ -1,0 +1,279 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Actual Boss Fight</title>
+  <style>
+    html,body{margin:0;height:100%;overflow:hidden;background:#000;font-family:system-ui,Segoe UI,Roboto,Arial}
+    #ui{position:fixed;left:12px;top:12px;z-index:30;background:rgba(0,0,0,.6);color:#fff;padding:10px 12px;border-radius:8px;font-size:13px}
+    #center{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);z-index:40;background:rgba(0,0,0,.75);color:#fff;padding:14px 18px;border-radius:10px;cursor:pointer}
+    #reloadMsg{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);z-index:40;background:rgba(0,0,0,.75);padding:8px 12px;border-radius:8px;color:#ffdd88;display:none}
+    #bossHud{position:fixed;left:50%;top:12px;transform:translateX(-50%);z-index:40;width:520px;height:22px;background:#2a0f0f;border-radius:12px;overflow:hidden;box-shadow:0 3px 12px rgba(0,0,0,0.6)}
+    #bossBar{height:100%;width:100%;background:linear-gradient(90deg,#ff3b3b,#ff9a3b)}
+    #bossLabel{position:absolute;left:50%;top:0;transform:translateX(-50%);color:#fff;font-size:12px;line-height:22px;font-weight:700;text-shadow:0 1px 2px #000}
+    #playerHud{position:fixed;left:12px;bottom:12px;width:18px;height:240px;background:#300;border-radius:10px;overflow:hidden;box-shadow:0 3px 12px rgba(0,0,0,.6);z-index:40}
+    #playerBar{position:absolute;bottom:0;width:100%;height:100%;background:linear-gradient(#ff4444,#aa0000);transition:height .15s linear}
+    #playerHpText{position:fixed;left:40px;bottom:16px;color:#fff;font-size:12px;opacity:.85}
+    #flash{position:fixed;left:0;top:0;width:100%;height:100%;background:#fff;opacity:0;pointer-events:none;z-index:9999}
+    canvas{display:block} #vrButton{position:fixed;right:14px;top:14px;z-index:100;border:1px solid #ff7777;border-radius:9px;padding:12px 16px;background:#350909;color:#fff;font-weight:700;font-size:14px} #vrStatus{position:fixed;right:14px;top:64px;z-index:100;color:#fff;background:#000a;padding:7px 10px;border-radius:7px;font-size:12px;max-width:250px}
+  </style>
+</head>
+<body>
+
+<div id="ui">Actual Boss Fight Arena<br><span style="opacity:.8">The ritual chamber awaits…</span></div>
+<div id="center">Click to start</div><button id="vrButton">Enter Quest 3 VR</button><div id="vrStatus">Left stick: move · Right stick: turn · A: jump · Right trigger: shoot</div>
+<div id="reloadMsg">Press R to reload weapon</div>
+<div id="bossHud"><div id="bossBar"></div><div id="bossLabel">Obscura, Antiprism — HP: <span id="bossHpText">500</span>/500</div></div>
+<div id="shieldHud" style="position:fixed;left:50%;top:42px;transform:translateX(-50%);z-index:40;width:420px;height:16px;background:#0a1630;border-radius:10px;overflow:hidden;display:none;box-shadow:0 3px 10px rgba(0,0,0,.6)"><div id="shieldBar" style="height:100%;width:100%;background:linear-gradient(90deg,#3ba0ff,#7fd0ff)"></div></div>
+<div id="playerHud"><div id="playerBar"></div></div><div id="playerHpText">HP: 100</div>
+<div id="flash"></div>
+
+<script src="https://unpkg.com/three@0.158.0/build/three.min.js"></script>
+<script>
+// ---------------- Scene setup ----------------
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x660000);
+
+const camera = new THREE.PerspectiveCamera(75, innerWidth/innerHeight, 0.1, 2000);
+camera.position.set(0,3,0);
+const playerRig = new THREE.Group();
+playerRig.position.set(0,0,18);
+scene.add(playerRig);
+playerRig.add(camera);
+
+const renderer = new THREE.WebGLRenderer({antialias:true});
+renderer.xr.enabled = true;
+renderer.setSize(innerWidth, innerHeight);
+document.body.appendChild(renderer.domElement);
+window.addEventListener('resize',()=>{camera.aspect = innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth, innerHeight);});
+
+// ---------------- Audio (AudioContext + fallback) ----------------
+const audioCtx = (window.AudioContext||window.webkitAudioContext)? new (window.AudioContext||window.webkitAudioContext)():null;
+async function loadBuffer(src){
+  if(!audioCtx) return null;
+  try{
+    const res = await fetch(src);
+    const ab = await res.arrayBuffer();
+    const buf = await audioCtx.decodeAudioData(ab);
+    return buf;
+  }catch(e){ console.warn('Buffer load failed',src,e); return null; }
+}
+
+function playBuffer(buf, vol=1){
+  if(!audioCtx || !buf) return false;
+  const s = audioCtx.createBufferSource();
+  s.buffer = buf;
+  const g = audioCtx.createGain();
+  g.gain.value = vol;
+  s.connect(g); g.connect(audioCtx.destination);
+  s.start(0);
+  return true;
+}
+
+// Safe audio objects (fallback to HTMLAudio)
+async function createSound(name){
+  const buf = await loadBuffer(name);
+  const audio = new Audio(); audio.src = name; audio.preload='auto';
+  return {buffer:buf, element: audio};
+}
+
+let bossMusic = null, rainSound = null;
+let shootSnd = null, reloadSnd = null, pulseSnd = null, splodeSnd = null;
+(async()=>{
+  bossMusic = await createSound('Sandbox-The-Octagon-of-Truest-Lights.mp3');
+  rainSound = await createSound('Sandbox-Rain.mp3');
+  shootSnd = await createSound('Sandbox-Shoot.mp3');
+  reloadSnd = await createSound('Sandbox-Reload.mp3');
+  pulseSnd = await createSound('Sandbox-Pulse.mp3');
+  splodeSnd = await createSound('Sandbox-Splode.mp3');
+})();
+
+let musicStarted = false;
+function playMusic(){
+  // try AudioContext loop via element if available, otherwise element.play()
+  if(bossMusic){
+    if(audioCtx && bossMusic.buffer){
+      // create looping source using element as fallback because buffer looping needs new source
+      try{ bossMusic.element.loop=true; bossMusic.element.volume=0.75; bossMusic.element.play().catch(()=>{}); }catch(e){}
+    } else { bossMusic.element.loop=true; bossMusic.element.volume=0.75; bossMusic.element.play().catch(()=>{}); }
+  }
+  if(rainSound){ try{ rainSound.element.loop=true; rainSound.element.volume=0.45; rainSound.element.play().catch(()=>{}); }catch(e){} }
+}
+
+function playSfx(soundObj, vol=1){
+  if(!soundObj) return;
+  // try buffer first
+  if(soundObj.buffer){ if(playBuffer(soundObj.buffer,vol)) return; }
+  try{ soundObj.element.currentTime=0; soundObj.element.volume = vol; soundObj.element.play().catch(()=>{}); }catch(e){}
+}
+
+// ---------------- Lighting ----------------
+scene.add(new THREE.AmbientLight(0x441111,0.9));
+const sunLight = new THREE.DirectionalLight(0xffdddd, 1.6);
+sunLight.position.set(0,500,160);
+scene.add(sunLight);
+
+const fill = new THREE.PointLight(0xff6666,0.6,400);
+fill.position.set(0,60,0);
+scene.add(fill);
+
+// visible sun (always render on top so you can see it through clouds)
+const sunMesh = new THREE.Mesh(new THREE.SphereGeometry(10,32,16), new THREE.MeshBasicMaterial({color:0xffcc99}));
+sunMesh.position.copy(sunLight.position);
+sunMesh.renderOrder = 9999; sunMesh.material.depthTest = false; scene.add(sunMesh);
+
+// ---------------- Arena ----------------
+const SIZE = 70;
+const wallMaterial = new THREE.MeshStandardMaterial({color:0x666666,roughness:0.85,metalness:0.05,emissive:0x220000,emissiveIntensity:0.12,side:THREE.DoubleSide});
+function makeWall(w,h,x,y,z,ry){ const m = new THREE.Mesh(new THREE.PlaneGeometry(w,h), wallMaterial); m.position.set(x,y,z); m.rotation.y = ry; scene.add(m); }
+makeWall(SIZE,SIZE,0,SIZE/2,-SIZE/2,0); makeWall(SIZE,SIZE,0,SIZE/2,SIZE/2,Math.PI); makeWall(SIZE,SIZE,-SIZE/2,SIZE/2,0,Math.PI/2); makeWall(SIZE,SIZE,SIZE/2,SIZE/2,0,-Math.PI/2);
+const floor = new THREE.Mesh(new THREE.PlaneGeometry(SIZE,SIZE), new THREE.MeshStandardMaterial({color:0x333033,roughness:1})); floor.rotation.x = -Math.PI/2; scene.add(floor);
+
+// clouds (semi-transparent layers)
+for(let i=0;i<3;i++){
+  const c = new THREE.Mesh(new THREE.PlaneGeometry(SIZE*1.6, SIZE*1.6), new THREE.MeshStandardMaterial({color:0x440000,transparent:true,opacity:0.22 - i*0.05,side:THREE.DoubleSide}));
+  c.rotation.x = Math.PI/2; c.position.y = SIZE*0.9 + i*2; c.position.z = (i-1)*5; scene.add(c);
+}
+
+// ---------------- Rain (3D streaks) ----------------
+let rainCount = 4200;
+const rainGeom = new THREE.BufferGeometry();
+const rainPositions = new Float32Array(rainCount * 6);
+const rainLengths = new Float32Array(rainCount);
+for(let i=0;i<rainCount;i++){
+  const x = (Math.random()-0.5)*(SIZE*1.4);
+  const y = Math.random()*SIZE + SIZE*0.8;
+  const z = (Math.random()-0.5)*(SIZE*1.4);
+  const len = 0.6 + Math.random()*1.6;
+  rainLengths[i] = len;
+  rainPositions[i*6 + 0] = x; rainPositions[i*6 + 1] = y; rainPositions[i*6 + 2] = z;
+  rainPositions[i*6 + 3] = x + (Math.random()-0.5)*0.6; rainPositions[i*6 + 4] = y - len; rainPositions[i*6 + 5] = z + (Math.random()-0.5)*0.6;
+}
+rainGeom.setAttribute('position', new THREE.BufferAttribute(rainPositions, 3));
+const rainMat = new THREE.LineBasicMaterial({ color:0xff1111, transparent:true, opacity:0.95 });
+const rain = new THREE.LineSegments(rainGeom, rainMat); scene.add(rain);
+scene.fog = new THREE.FogExp2(0x2a0000, 0.004);
+
+// ---------------- Pointer lock ----------------
+const centerBtn = document.getElementById('center');
+function lock(){ if(renderer.xr.isPresenting) return; renderer.domElement.requestPointerLock(); if(!musicStarted){ try{ if(audioCtx && audioCtx.state==='suspended') audioCtx.resume(); }catch(e){} playMusic(); musicStarted=true; } }
+centerBtn.onclick = lock; renderer.domElement.onclick = lock; document.addEventListener('pointerlockchange',()=>{ centerBtn.style.display = document.pointerLockElement ? 'none':'block'; });
+
+// ---------------- Controls ----------------
+let yaw=0,pitch=0; const keys={}; document.addEventListener('keydown',e=>keys[e.code]=true); document.addEventListener('keyup',e=>keys[e.code]=false);
+document.addEventListener('mousemove',e=>{ if(document.pointerLockElement!==renderer.domElement) return; yaw -= e.movementX*0.0025; pitch -= e.movementY*0.0025; pitch = Math.max(-Math.PI/2, Math.min(Math.PI/2,pitch)); camera.quaternion.setFromEuler(new THREE.Euler(pitch,yaw,0,'YXZ')); });
+
+// ---------------- Movement ----------------
+const vel = new THREE.Vector3();
+let xrSession = null, jumpVelocity = 0, jumpHeight = 0;
+const xrInput = {moveX:0,moveY:0,turnX:0,shoot:false,jump:false,_jumpWasDown:false};
+function deadzone(v){ return Math.abs(v)<0.16 ? 0 : Math.sign(v)*((Math.abs(v)-0.16)/0.84); }
+function getViewCamera(){ return renderer.xr.isPresenting ? renderer.xr.getCamera(camera) : camera; }
+function getViewPosition(){ const p = new THREE.Vector3(); getViewCamera().getWorldPosition(p); return p; }
+function getViewDirection(){ const d = new THREE.Vector3(); getViewCamera().getWorldDirection(d); return d.normalize(); }
+function updateXRControls(dt){
+ if(!renderer.xr.isPresenting) return;
+ const session=renderer.xr.getSession(); if(!session) return;
+ let left=null,right=null;
+ for(const src of session.inputSources){if(!src.gamepad)continue;if(src.handedness==='left')left=src.gamepad;if(src.handedness==='right')right=src.gamepad;}
+ if(left){const a=left.axes||[];const ix=a.length>=4?2:0,iy=a.length>=4?3:1;xrInput.moveX=deadzone(a[ix]||0);xrInput.moveY=deadzone(a[iy]||0);}else{xrInput.moveX=0;xrInput.moveY=0;}
+ if(right){const a=right.axes||[];const ix=a.length>=4?2:0;xrInput.turnX=deadzone(a[ix]||0);xrInput.shoot=!!(right.buttons[0]&&right.buttons[0].pressed);xrInput.jump=!!(right.buttons[4]&&right.buttons[4].pressed);}else{xrInput.turnX=0;xrInput.shoot=false;xrInput.jump=false;}
+ if(Math.abs(xrInput.turnX)>0) playerRig.rotation.y -= xrInput.turnX*dt*1.8;
+ const forward=new THREE.Vector3(0,0,-1).applyQuaternion(playerRig.quaternion),rightVec=new THREE.Vector3(1,0,0).applyQuaternion(playerRig.quaternion);
+ const dir=new THREE.Vector3().addScaledVector(forward,-xrInput.moveY).addScaledVector(rightVec,xrInput.moveX);if(dir.lengthSq()>1)dir.normalize();playerRig.position.addScaledVector(dir,7*dt);
+ if(xrInput.jump&&!xrInput._jumpWasDown&&jumpHeight<=0.001)jumpVelocity=5.5;xrInput._jumpWasDown=xrInput.jump;
+ jumpVelocity-=12*dt;jumpHeight=Math.max(0,jumpHeight+jumpVelocity*dt);if(jumpHeight===0)jumpVelocity=0;playerRig.position.y=jumpHeight;
+ const limit=SIZE/2-2;playerRig.position.x=Math.max(-limit,Math.min(limit,playerRig.position.x));playerRig.position.z=Math.max(-limit,Math.min(limit,playerRig.position.z));
+}
+function updatePlayer(dt){if(renderer.xr.isPresenting){updateXRControls(dt);return;}const forward=new THREE.Vector3(0,0,-1).applyQuaternion(camera.quaternion).setY(0).normalize();const right=new THREE.Vector3(1,0,0).applyQuaternion(camera.quaternion).setY(0).normalize();const dir=new THREE.Vector3();if(keys.KeyW)dir.add(forward);if(keys.KeyS)dir.sub(forward);if(keys.KeyD)dir.add(right);if(keys.KeyA)dir.sub(right);if(dir.length()>0)dir.normalize();vel.lerp(dir.multiplyScalar(10),Math.min(1,dt*10));playerRig.position.addScaledVector(vel,dt);const limit=SIZE/2-1;playerRig.position.x=Math.max(-limit,Math.min(limit,playerRig.position.x));playerRig.position.z=Math.max(-limit,Math.min(limit,playerRig.position.z));}
+
+// ---------------- Boss geometry ----------------
+function createPyritohedralAntiprism(radius, height){ const base = new THREE.IcosahedronGeometry(radius, 0); const pos = base.attributes.position; for(let i=0;i<pos.count;i++){ let x = pos.getX(i); let y = pos.getY(i); let z = pos.getZ(i); const k = 0.35; x += Math.sign(x)*Math.abs(x)*k; y += Math.sign(y)*Math.abs(y)*k; z += Math.sign(z)*Math.abs(z)*k; const t = (y / radius) * 0.8; const c = Math.cos(t); const s = Math.sin(t); const nx = x*c - z*s; const nz = x*s + z*c; pos.setXYZ(i, nx, y*(height/radius), nz); } base.computeVertexNormals(); return base; }
+const antiprismGeo = createPyritohedralAntiprism(5.5, 8.0); const antiprismMat = new THREE.MeshStandardMaterial({color:0x8822aa,metalness:0.7,roughness:0.25,emissive:0x440033,emissiveIntensity:0.2}); const boss = new THREE.Mesh(antiprismGeo, antiprismMat); boss.position.set(0,22,0); boss.scale.set(1.6,1.6,1.6); scene.add(boss);
+
+// ---------------- Boss stats ----------------
+let bossMaxHp = 500; let bossHp = bossMaxHp; const bossBar = document.getElementById('bossBar'); const bossHpText = document.getElementById('bossHpText'); function updateBossBar(){ bossBar.style.width = (bossHp/bossMaxHp*100)+'%'; bossHpText.textContent = Math.max(0,Math.floor(bossHp)); } updateBossBar(); let bossFloatT = 0;
+
+// ---------------- Player health ----------------
+let playerMaxHp = 100; let playerHp = playerMaxHp; let isRespawning = false; const playerBar = document.getElementById('playerBar'); const playerHpText = document.getElementById('playerHpText'); function updatePlayerUI(colorOverride=null){ const pct = Math.max(0,playerHp/playerMaxHp)*100; playerBar.style.height = pct+'%'; if(colorOverride) playerBar.style.background = colorOverride; else playerBar.style.background = 'linear-gradient(#ff4444,#aa0000)'; playerHpText.textContent = 'HP: '+Math.floor(playerHp); } updatePlayerUI(); function resetBoss(){ bossHp = bossMaxHp; updateBossBar(); shieldActive = true; shieldHp = shieldMaxHp; shieldMesh.visible = true; updateShieldUI(); }
+function respawnPlayer(){ isRespawning = true; playerHp = 0; updatePlayerUI('linear-gradient(#ffd36a,#ffb300)'); const start = performance.now(); function anim(t){ const p = Math.min(1,(t-start)/1500); playerHp = p*playerMaxHp; updatePlayerUI('linear-gradient(#ffd36a,#ffb300)'); if(p<1) requestAnimationFrame(anim); else{ isRespawning = false; updatePlayerUI(); } } resetBoss(); requestAnimationFrame(anim); }
+
+// ---------------- Shield ----------------
+let shieldMaxHp = 10; let shieldHp = shieldMaxHp; let shieldActive = true; let shieldRegenTimer = 0; const shieldCooldown = 10; const shieldGeom = new THREE.SphereGeometry(7.2, 32, 24); const shieldMat = new THREE.MeshStandardMaterial({color:0x3388ff,transparent:true,opacity:0.18,emissive:0x2244ff,emissiveIntensity:0.4}); const shieldMesh = new THREE.Mesh(shieldGeom, shieldMat); boss.add(shieldMesh); const shieldHud = document.getElementById('shieldHud'); const shieldBar = document.getElementById('shieldBar'); function updateShieldUI(){ if(!shieldActive){ shieldHud.style.display='none'; return; } shieldHud.style.display='block'; shieldBar.style.width = (shieldHp/shieldMaxHp*100)+'%'; } updateShieldUI();
+
+// ---------------- Player bullets ----------------
+const bullets = []; const bulletSpeed = 110; const bulletDamage = 5; const fireInterval = 1/3; let fireTimer = 0; let isShooting = false; let continuousShootTime = 0; let needsReload = false; const maxContinuous = 5; window.addEventListener('mousedown',e=>{ if(document.pointerLockElement===renderer.domElement && e.button===0 && !needsReload) isShooting=true; }); window.addEventListener('mouseup',e=>{ if(e.button===0) isShooting=false; }); window.addEventListener('keydown',e=>{ if(e.code==='KeyR' && needsReload){ playSfx(reloadSnd,0.9); needsReload=false; continuousShootTime=0; document.getElementById('reloadMsg').style.display='none'; } });
+function spawnBullet(){ playSfx(shootSnd,0.9); const pos = getViewPosition(); const forward = getViewDirection(); const spawnPos = pos.clone().add(forward.multiplyScalar(0.15)); const geom = new THREE.SphereGeometry(0.07,8,6); const mat = new THREE.MeshStandardMaterial({color:0xD4AF37,emissive:0x6a4a00,metalness:0.9,roughness:0.2}); const mesh = new THREE.Mesh(geom,mat); mesh.position.copy(spawnPos); scene.add(mesh); bullets.push({mesh,vel:forward.multiplyScalar(bulletSpeed),life:4}); }
+function updateBullets(dt){ for(let i=bullets.length-1;i>=0;i--){ const b = bullets[i]; b.life -= dt; b.mesh.position.addScaledVector(b.vel,dt); const dist = b.mesh.position.distanceTo(boss.position); if(shieldActive && dist < 7.4){ shieldHp--; updateShieldUI(); if(shieldHp<=0){ shieldActive=false; shieldMesh.visible=false; shieldRegenTimer=shieldCooldown; } scene.remove(b.mesh); bullets.splice(i,1); continue; } if(!shieldActive && dist < 6.5){ bossHp = Math.max(0,bossHp-bulletDamage); updateBossBar(); scene.remove(b.mesh); bullets.splice(i,1); continue; } if(b.life<=0){ scene.remove(b.mesh); bullets.splice(i,1); } } }
+
+// ---------------- Boss projectiles (with bursts) ----------------
+const bossProjectiles = []; const bossFireInterval = 1.3; let bossFireTimer = 0; let burstAccumulator = 0; let endSequence = false; let endTimer = 0; let deathHandled = false;
+function spawnBossProjectile(){ playSfx(pulseSnd,0.9); const geom = new THREE.SphereGeometry(0.35,10,10); const mat = new THREE.MeshStandardMaterial({color:0x3399ff,emissive:0x2266ff,emissiveIntensity:0.9}); const mesh = new THREE.Mesh(geom,mat); const start = boss.position.clone(); const target = getViewPosition(); const dir = target.sub(start).normalize(); mesh.position.copy(start); scene.add(mesh); bossProjectiles.push({mesh,vel:dir.multiplyScalar(28),life:8}); }
+function spawnBossBurst(){ playSfx(pulseSnd,0.95); const start = boss.position.clone(); const baseTarget = getViewPosition(); for(let i=0;i<5;i++){ const jitter = new THREE.Vector3((Math.random()-0.5)*0.8, (Math.random()-0.5)*0.4, (Math.random()-0.5)*0.8); const target = baseTarget.clone().add(jitter); const dir = target.sub(start).normalize(); const geom = new THREE.SphereGeometry(0.35,10,10); const mat = new THREE.MeshStandardMaterial({color:0x3399ff,emissive:0x2266ff,emissiveIntensity:0.9}); const mesh = new THREE.Mesh(geom,mat); mesh.position.copy(start); scene.add(mesh); bossProjectiles.push({mesh,vel:dir.multiplyScalar(30 + Math.random()*6),life:7}); } }
+function updateBossProjectiles(dt){ for(let i=bossProjectiles.length-1;i>=0;i--){ const p = bossProjectiles[i]; p.life -= dt; p.mesh.position.addScaledVector(p.vel,dt); const dist = p.mesh.position.distanceTo(getViewPosition()); if(dist < 1.0 && !isRespawning){ playerHp -= 10; if(playerHp <= 0){ respawnPlayer(); } updatePlayerUI(); scene.remove(p.mesh); bossProjectiles.splice(i,1); continue; } if(p.life<=0){ scene.remove(p.mesh); bossProjectiles.splice(i,1); } } }
+
+// ---------------- Game loop ----------------
+const clock = new THREE.Clock(); function animate(){ const dt = Math.min(clock.getDelta(),0.05); if(endSequence){ endTimer += dt; boss.rotation.y += dt*12; boss.position.y -= dt*6; if(endTimer>0.6){ // flash & teleport
+    const f = document.getElementById('flash');
+    f.style.transition='opacity 0.12s linear';
+    f.style.opacity='1';
+    // explosion sound already played at death moment
+    setTimeout(()=>{ window.location.href='Sandbox_V0.-1.0.html'; }, 350);
+    endSequence=false;
+  }
+  }
+  updatePlayer(dt); bossFloatT += dt; boss.position.y = 22 + Math.sin(bossFloatT*0.9)*1.6; // normal float
+  // additional spin when not in end
+  if(!endSequence) boss.rotation.y += dt*1.8;
+  if((isShooting || (renderer.xr.isPresenting && xrInput.shoot)) && !needsReload && !endSequence){ fireTimer += dt; continuousShootTime += dt; if(fireTimer>=fireInterval){ spawnBullet(); fireTimer=0; } if(continuousShootTime>=maxContinuous){ needsReload=true; isShooting=false; document.getElementById('reloadMsg').style.display='block'; } }
+  updateBullets(dt);
+  if(!shieldActive){ shieldRegenTimer -= dt; if(shieldRegenTimer<=0){ shieldActive=true; shieldHp = shieldMaxHp; shieldMesh.visible=true; updateShieldUI(); } }
+  bossFireTimer += dt; burstAccumulator += dt; if(bossFireTimer>=bossFireInterval && !endSequence){ if(burstAccumulator >= 5.0){ spawnBossBurst(); burstAccumulator = 0; } else { spawnBossProjectile(); } bossFireTimer=0; }
+  updateBossProjectiles(dt);
+  // rain update
+  const rp = rain.geometry.attributes.position.array; const fallSpeed = 90; const windX = 8.0; const windZ = 2.0; for(let i=0;i<rainCount;i++){ const si = i*6; rp[si + 1] -= fallSpeed * dt; rp[si + 0] += windX * dt * (Math.random()*0.6 + 0.7); rp[si + 2] += windZ * dt * (Math.random()*0.4 - 0.2); rp[si + 4] -= fallSpeed * dt; rp[si + 3] += windX * dt * (Math.random()*0.6 + 0.7); rp[si + 5] += windZ * dt * (Math.random()*0.4 - 0.2); if(rp[si + 1] < 0 && rp[si + 4] < 0){ const x = (Math.random()-0.5)*(SIZE*1.4); const y = SIZE + Math.random()*SIZE*0.5; const z = (Math.random()-0.5)*(SIZE*1.4); const len = rainLengths[i]; rp[si + 0] = x; rp[si + 1] = y; rp[si + 2] = z; rp[si + 3] = x + (Math.random()-0.5)*0.6; rp[si + 4] = y - len; rp[si + 5] = z + (Math.random()-0.5)*0.6; } } rain.geometry.attributes.position.needsUpdate = true;
+  // boss death check
+  if(bossHp <= 0 && !endSequence){
+    endSequence = true;
+    if(!deathHandled){
+      deathHandled = true;
+      // fade out music & rain
+      function fadeOut(el,dur=1200){
+        if(!el) return;
+        const startVol = el.volume || 1;
+        const t0 = performance.now();
+        function step(t){
+          const p = Math.min(1,(t-t0)/dur);
+          el.volume = startVol*(1-p);
+          if(p<1) requestAnimationFrame(step); else{ el.pause(); el.currentTime = 0; el.volume = startVol; }
+        }
+        requestAnimationFrame(step);
+      }
+      try{ if(bossMusic && bossMusic.element){ fadeOut(bossMusic.element,1500); } }catch(e){}
+      try{ if(rainSound && rainSound.element){ fadeOut(rainSound.element,1200); } }catch(e){}
+      // play explosion immediately
+      playSfx(splodeSnd,1);
+    }
+  }
+  renderer.render(scene,camera);
+}
+renderer.setAnimationLoop(animate);
+
+
+// ---------------- Quest 3 WebXR entry ----------------
+const vrButton=document.getElementById('vrButton');const vrStatus=document.getElementById('vrStatus');
+if(!navigator.xr){vrStatus.textContent='WebXR unavailable here. Open this page over HTTPS in Quest Browser.';}else navigator.xr.isSessionSupported('immersive-vr').then(ok=>{if(!ok)vrStatus.textContent='VR not detected. Open this page in Quest Browser over HTTPS.';}).catch(()=>{});
+vrButton.addEventListener('click',async()=>{if(!navigator.xr){vrStatus.textContent='WebXR requires a compatible browser and HTTPS.';return;}try{if(renderer.xr.isPresenting){await renderer.xr.getSession().end();return;}const session=await navigator.xr.requestSession('immersive-vr',{optionalFeatures:['local-floor']});xrSession=session;await renderer.xr.setSession(session);vrButton.textContent='Exit VR';vrStatus.textContent='Left stick move · Right stick turn · A jump · Right trigger shoot';centerBtn.style.display='none';session.addEventListener('end',()=>{xrSession=null;vrButton.textContent='Enter Quest 3 VR';vrStatus.textContent='Left stick: move · Right stick: turn · A: jump · Right trigger: shoot';playerRig.position.y=0;jumpHeight=0;jumpVelocity=0;});if(!musicStarted){try{if(audioCtx&&audioCtx.state==='suspended')await audioCtx.resume();}catch(e){}playMusic();musicStarted=true;}}catch(err){console.error(err);vrStatus.textContent='Could not enter VR: '+(err.message||err);}});
+
+// ---------------- Minimal tests ----------------
+console.assert(typeof createPyritohedralAntiprism === 'function','Boss geometry function missing');
+console.assert(bossMaxHp===500,'Boss HP should be 500');
+console.assert(bulletDamage===5,'Bullet damage should be 5');
+console.assert(playerMaxHp===100,'Player max HP should be 100');
+console.assert(typeof spawnBossProjectile === 'function','Boss projectile spawner missing');
+console.assert(typeof playSfx === 'function','Audio play helper missing');
+
+</script>
+</body>
+</html>
