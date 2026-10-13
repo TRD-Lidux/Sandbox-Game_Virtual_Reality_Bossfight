@@ -202,12 +202,26 @@ const antiprismGeo = createPyritohedralAntiprism(5.5, 8.0); const antiprismMat =
 // ---------------- Boss stats ----------------
 let bossMaxHp = 500; let bossHp = bossMaxHp; const bossBar = document.getElementById('bossBar'); const bossHpText = document.getElementById('bossHpText');
 // A billboard health bar is needed because ordinary HTML HUD elements are not part of the VR scene.
-const bossHudCanvas=document.createElement('canvas'); bossHudCanvas.width=768; bossHudCanvas.height=112;
-const bossHudCtx=bossHudCanvas.getContext('2d'); const bossHudTexture=new THREE.CanvasTexture(bossHudCanvas); bossHudTexture.minFilter=THREE.LinearFilter;
-const bossHudSprite=new THREE.Sprite(new THREE.SpriteMaterial({map:bossHudTexture,transparent:true,depthTest:false,depthWrite:false}));
+// Use var-backed HUD references so an early health update cannot hit a lexical TDZ.
+// The normal HTML HUD remains the desktop fallback; the canvas sprite is shown in VR.
+var bossHudCanvas = document.createElement('canvas'); bossHudCanvas.width=768; bossHudCanvas.height=112;
+var bossHudCtx = bossHudCanvas.getContext('2d');
+var bossHudTexture = new THREE.CanvasTexture(bossHudCanvas); bossHudTexture.minFilter=THREE.LinearFilter;
+var bossHudSprite = new THREE.Sprite(new THREE.SpriteMaterial({map:bossHudTexture,transparent:true,depthTest:false,depthWrite:false}));
 bossHudSprite.position.set(0,11.2,0); bossHudSprite.scale.set(13.5,1.95,1); bossHudSprite.renderOrder=1000; bossHudSprite.visible=false; boss.add(bossHudSprite);
-function drawBossWorldHud(){ const c=bossHudCtx,w=bossHudCanvas.width,h=bossHudCanvas.height,pct=Math.max(0,bossHp/bossMaxHp); c.clearRect(0,0,w,h); c.fillStyle='rgba(15,5,8,0.88)'; c.beginPath(); c.roundRect(4,4,w-8,h-8,18); c.fill(); c.fillStyle='#351013'; c.fillRect(16,52,w-32,42); const grad=c.createLinearGradient(16,0,w-16,0);grad.addColorStop(0,'#ff3b3b');grad.addColorStop(1,'#ff9a3b');c.fillStyle=grad;c.fillRect(16,52,(w-32)*pct,42); c.strokeStyle='rgba(255,255,255,.8)';c.lineWidth=3;c.strokeRect(16,52,w-32,42);c.font='bold 29px system-ui, sans-serif';c.textAlign='center';c.textBaseline='middle';c.fillStyle='#fff';c.shadowColor='#000';c.shadowBlur=5;c.fillText('Obscura, Antiprism — HP: '+Math.max(0,Math.floor(bossHp))+'/500',w/2,29);bossHudTexture.needsUpdate=true; }
-function updateBossBar(){ const pct=Math.max(0,bossHp/bossMaxHp*100); bossBar.style.width=pct+'%'; bossHpText.textContent=Math.max(0,Math.floor(bossHp)); drawBossWorldHud(); } updateBossBar(); let bossFloatT = 0;
+function drawBossWorldHud(){
+  if(!bossHudCtx || !bossHudCanvas || !bossHudTexture) return;
+  const c=bossHudCtx,w=bossHudCanvas.width,h=bossHudCanvas.height,pct=Math.max(0,bossHp/bossMaxHp);
+  c.clearRect(0,0,w,h); c.fillStyle='rgba(15,5,8,0.88)'; c.beginPath();
+  if(c.roundRect) c.roundRect(4,4,w-8,h-8,18); else c.rect(4,4,w-8,h-8); c.fill();
+  c.fillStyle='#351013'; c.fillRect(16,52,w-32,42);
+  const grad=c.createLinearGradient(16,0,w-16,0); grad.addColorStop(0,'#ff3b3b'); grad.addColorStop(1,'#ff9a3b');
+  c.fillStyle=grad; c.fillRect(16,52,(w-32)*pct,42); c.strokeStyle='rgba(255,255,255,.8)'; c.lineWidth=3; c.strokeRect(16,52,w-32,42);
+  c.font='bold 29px system-ui, sans-serif'; c.textAlign='center'; c.textBaseline='middle'; c.fillStyle='#fff'; c.shadowColor='#000'; c.shadowBlur=5;
+  c.fillText('Obscura, Antiprism — HP: '+Math.max(0,Math.floor(bossHp))+'/500',w/2,29); bossHudTexture.needsUpdate=true;
+}
+function updateBossBar(){ const pct=Math.max(0,bossHp/bossMaxHp*100); bossBar.style.width=pct+'%'; bossHpText.textContent=Math.max(0,Math.floor(bossHp)); if(typeof bossHudCtx!=='undefined' && bossHudCtx) drawBossWorldHud(); }
+updateBossBar(); let bossFloatT = 0;
 
 // ---------------- Player health ----------------
 let playerMaxHp = 100; let playerHp = playerMaxHp; let isRespawning = false; const playerBar = document.getElementById('playerBar'); const playerHpText = document.getElementById('playerHpText'); function updatePlayerUI(colorOverride=null){ const pct = Math.max(0,playerHp/playerMaxHp)*100; playerBar.style.height = pct+'%'; if(colorOverride) playerBar.style.background = colorOverride; else playerBar.style.background = 'linear-gradient(#ff4444,#aa0000)'; playerHpText.textContent = 'HP: '+Math.floor(playerHp); } updatePlayerUI(); function resetBoss(){ bossHp = bossMaxHp; updateBossBar(); shieldActive = true; shieldHp = shieldMaxHp; shieldMesh.visible = true; updateShieldUI(); }
