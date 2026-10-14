@@ -16,7 +16,7 @@
     #playerBar{position:absolute;bottom:0;width:100%;height:100%;background:linear-gradient(#ff4444,#aa0000);transition:height .15s linear}
     #playerHpText{position:fixed;left:40px;bottom:16px;color:#fff;font-size:12px;opacity:.85}
     #flash{position:fixed;left:0;top:0;width:100%;height:100%;background:#fff;opacity:0;pointer-events:none;z-index:9999}
-    canvas{display:block} #vrButton{position:fixed;right:14px;top:14px;z-index:100;border:1px solid #ff7777;border-radius:9px;padding:12px 16px;background:#350909;color:#fff;font-weight:a700;font-size:14px} #vrStatus{position:fixed;right:14px;top:64px;z-index:100;color:#fff;background:#000a;padding:7px 10px;border-radius:7px;font-size:12px;max-width:250px}
+    canvas{display:block} #vrButton{position:fixed;right:14px;top:14px;z-index:100;border:1px solid #ff7777;border-radius:9px;padding:12px 16px;background:#350909;color:#fff;font-weight:700;font-size:14px} #vrStatus{position:fixed;right:14px;top:64px;z-index:100;color:#fff;background:#000a;padding:7px 10px;border-radius:7px;font-size:12px;max-width:250px}
   </style>
 </head>
 <body>
@@ -201,11 +201,10 @@ function getViewPosition(){ const p = new THREE.Vector3(); getViewCamera().getWo
 function getViewDirection(){ const d = new THREE.Vector3(); getViewCamera().getWorldDirection(d); return d.normalize(); }
 function getWeaponPose(){
  if(renderer.xr.isPresenting&&xrGrips.right){
-  const gun=xrGuns.right; const grip=xrGrips.right; const origin=new THREE.Vector3(); const direction=new THREE.Vector3();
-  // Use the physical grip pose, so the visible blaster follows the hand and fires from its muzzle.
+  const grip=xrGrips.right;const gun=xrGuns.right;const origin=new THREE.Vector3();const direction=new THREE.Vector3();
   grip.updateWorldMatrix(true,true);
-  if(gun){gun.updateWorldMatrix(true,false);const q=new THREE.Quaternion();gun.getWorldQuaternion(q);direction.set(0,0,-1).applyQuaternion(q).normalize();origin.setFromMatrixPosition(gun.matrixWorld).addScaledVector(direction,0.38);}
-  else {grip.getWorldPosition(origin);grip.getWorldDirection(direction);}
+  if(gun){gun.updateWorldMatrix(true,true);const q=new THREE.Quaternion();gun.getWorldQuaternion(q);direction.set(0,0,-1).applyQuaternion(q).normalize();origin.setFromMatrixPosition(gun.matrixWorld).addScaledVector(direction,0.43);}
+  else{grip.getWorldPosition(origin);grip.getWorldDirection(direction);}
   return {origin,direction:direction.normalize()};
  }
  return {origin:getViewPosition(),direction:getViewDirection()};
@@ -216,6 +215,9 @@ function updateXRControls(dt){
  let left=null,right=null;
  for(const src of session.inputSources){if(!src.gamepad)continue;if(src.handedness==='left')left=src.gamepad;if(src.handedness==='right')right=src.gamepad;}
  if(left){const a=left.axes||[];const ix=a.length>=4?2:0,iy=a.length>=4?3:1;xrInput.moveX=deadzone(a[ix]||0);xrInput.moveY=deadzone(a[iy]||0);}else{xrInput.moveX=0;xrInput.moveY=0;}
+ // Explicitly copy each tracked grip-space pose to its Three.js object. This keeps the
+ // blasters attached to the real controller positions on browsers with stale grip groups.
+ try{const frame=renderer.xr.getFrame(),refSpace=renderer.xr.getReferenceSpace();if(frame&&refSpace){for(const src of session.inputSources){const hand=src.handedness,grip=xrGrips[hand];if(!grip||!src.gripSpace)continue;const pose=frame.getPose(src.gripSpace,refSpace);if(pose){grip.position.set(pose.transform.position.x,pose.transform.position.y,pose.transform.position.z);grip.quaternion.set(pose.transform.orientation.x,pose.transform.orientation.y,pose.transform.orientation.z,pose.transform.orientation.w);grip.scale.set(1,1,1);grip.updateMatrix();grip.updateMatrixWorld(true);}}}}catch(e){}
  if(right){const a=right.axes||[];const ix=a.length>=4?2:0;xrInput.turnX=deadzone(a[ix]||0);xrInput.shoot=!!(right.buttons[0]&&(right.buttons[0].pressed || right.buttons[0].value>0.35));
  // A is the primary face button on the right Quest controller (usually button 4).
  xrInput.jump=!!(right.buttons[4]&&right.buttons[4].pressed);}else{xrInput.turnX=0;xrInput.shoot=false;xrInput.jump=false;}
@@ -242,17 +244,23 @@ var bossHudCanvas = document.createElement('canvas'); bossHudCanvas.width=768; b
 var bossHudCtx = bossHudCanvas.getContext('2d');
 var bossHudTexture = new THREE.CanvasTexture(bossHudCanvas); bossHudTexture.minFilter=THREE.LinearFilter;
 var bossHudSprite = new THREE.Sprite(new THREE.SpriteMaterial({map:bossHudTexture,transparent:true,depthTest:false,depthWrite:false}));
-bossHudSprite.position.set(0,11.2,0); bossHudSprite.scale.set(13.5,1.95,1); bossHudSprite.renderOrder=1000; bossHudSprite.visible=false; boss.add(bossHudSprite);
+bossHudSprite.position.set(0,12.0,0); bossHudSprite.scale.set(13.5,2.35,1); bossHudSprite.renderOrder=1000; bossHudSprite.visible=false; boss.add(bossHudSprite);
 function drawBossWorldHud(){
   if(!bossHudCtx || !bossHudCanvas || !bossHudTexture) return;
   const c=bossHudCtx,w=bossHudCanvas.width,h=bossHudCanvas.height,pct=Math.max(0,bossHp/bossMaxHp);
-  c.clearRect(0,0,w,h); c.fillStyle='rgba(15,5,8,0.88)'; c.beginPath();
+  c.clearRect(0,0,w,h); c.fillStyle='rgba(15,5,8,0.90)'; c.beginPath();
   if(c.roundRect) c.roundRect(4,4,w-8,h-8,18); else c.rect(4,4,w-8,h-8); c.fill();
-  c.fillStyle='#351013'; c.fillRect(16,52,w-32,42);
+  const shieldPct=shieldMaxHp>0?(shieldActive?Math.max(0,shieldHp/shieldMaxHp):0):0;
+  c.font='bold 24px system-ui, sans-serif'; c.textAlign='center'; c.textBaseline='middle'; c.fillStyle='#d9f0ff'; c.shadowColor='#000'; c.shadowBlur=5;
+  c.fillText('SHIELD: '+Math.max(0,Math.floor(shieldActive?shieldHp:0))+'/'+shieldMaxHp,w/2,23);
+  c.fillStyle='#102b48'; c.fillRect(16,39,w-32,22);
+  const shieldGrad=c.createLinearGradient(16,0,w-16,0); shieldGrad.addColorStop(0,'#167aff'); shieldGrad.addColorStop(1,'#82e5ff');
+  c.fillStyle=shieldGrad; c.fillRect(16,39,(w-32)*shieldPct,22); c.strokeStyle='#b9eaff'; c.lineWidth=2; c.strokeRect(16,39,w-32,22);
+  c.fillStyle='#351013'; c.fillRect(16,83,w-32,24);
   const grad=c.createLinearGradient(16,0,w-16,0); grad.addColorStop(0,'#ff3b3b'); grad.addColorStop(1,'#ff9a3b');
-  c.fillStyle=grad; c.fillRect(16,52,(w-32)*pct,42); c.strokeStyle='rgba(255,255,255,.8)'; c.lineWidth=3; c.strokeRect(16,52,w-32,42);
-  c.font='bold 29px system-ui, sans-serif'; c.textAlign='center'; c.textBaseline='middle'; c.fillStyle='#fff'; c.shadowColor='#000'; c.shadowBlur=5;
-  c.fillText('Obscura, Antiprism — HP: '+Math.max(0,Math.floor(bossHp))+'/500',w/2,29); bossHudTexture.needsUpdate=true;
+  c.fillStyle=grad; c.fillRect(16,83,(w-32)*pct,24); c.strokeStyle='rgba(255,255,255,.8)'; c.lineWidth=2; c.strokeRect(16,83,w-32,24);
+  c.font='bold 25px system-ui, sans-serif'; c.textAlign='center'; c.textBaseline='middle'; c.fillStyle='#fff';
+  c.fillText('Obscura, Antiprism — HP: '+Math.max(0,Math.floor(bossHp))+'/500',w/2,72); bossHudTexture.needsUpdate=true;
 }
 function updateBossBar(){ const pct=Math.max(0,bossHp/bossMaxHp*100); bossBar.style.width=pct+'%'; bossHpText.textContent=Math.max(0,Math.floor(bossHp)); if(typeof bossHudCtx!=='undefined' && bossHudCtx) drawBossWorldHud(); }
 updateBossBar(); let bossFloatT = 0;
@@ -266,10 +274,10 @@ const playerHudSprite=new THREE.Sprite(new THREE.SpriteMaterial({map:playerHudTe
 playerHudSprite.position.set(0,-0.32,-1.35); playerHudSprite.scale.set(0.9,0.42,1); playerHudSprite.renderOrder=1001; playerHudSprite.visible=false; camera.add(playerHudSprite);
 function drawPlayerVRHud(){if(!playerHudCtx)return;const c=playerHudCtx,w=playerHudCanvas.width,h=playerHudCanvas.height,p=Math.max(0,Math.min(1,playerHp/playerMaxHp));c.clearRect(0,0,w,h);c.fillStyle='rgba(0,0,0,.84)';c.beginPath();if(c.roundRect)c.roundRect(8,8,w-16,h-16,24);else c.rect(8,8,w-16,h-16);c.fill();c.font='bold 34px system-ui,sans-serif';c.textAlign='left';c.textBaseline='middle';c.fillStyle='#fff';c.fillText('SHIELD',28,43);c.textAlign='right';c.fillText((shieldActive?Math.max(0,Math.floor(shieldHp)):0)+' / '+shieldMaxHp,w-28,43);c.fillStyle='#0a1630';c.fillRect(28,66,w-56,38);const sp=shieldActive?Math.max(0,Math.min(1,shieldHp/shieldMaxHp)):0;const sg=c.createLinearGradient(28,0,w-28,0);sg.addColorStop(0,'#2788ff');sg.addColorStop(1,'#9be6ff');c.fillStyle=sg;c.fillRect(28,66,(w-56)*sp,38);c.strokeStyle='#a9d9ff';c.lineWidth=2;c.strokeRect(28,66,w-56,38);c.font='bold 34px system-ui,sans-serif';c.textAlign='left';c.fillStyle='#fff';c.fillText('PLAYER HEALTH',28,151);c.textAlign='right';c.fillText(Math.max(0,Math.floor(playerHp))+' / '+playerMaxHp,w-28,151);c.fillStyle='#451010';c.fillRect(28,177,w-56,66);const g=c.createLinearGradient(28,0,w-28,0);g.addColorStop(0,'#ff3333');g.addColorStop(1,'#ff9b3b');c.fillStyle=g;c.fillRect(28,177,(w-56)*p,66);c.strokeStyle='#fff';c.lineWidth=3;c.strokeRect(28,177,w-56,66);playerHudTexture.needsUpdate=true;}
 let playerMaxHp = 100; let playerHp = playerMaxHp; let isRespawning = false; const playerBar = document.getElementById('playerBar'); const playerHpText = document.getElementById('playerHpText'); function updatePlayerUI(colorOverride=null){ const pct = Math.max(0,playerHp/playerMaxHp)*100; playerBar.style.height = pct+'%'; if(colorOverride) playerBar.style.background = colorOverride; else playerBar.style.background = 'linear-gradient(#ff4444,#aa0000)'; playerHpText.textContent = 'HP: '+Math.floor(playerHp); if(typeof playerHudTexture!=='undefined') drawPlayerVRHud(); } function resetBoss(){ bossHp = bossMaxHp; updateBossBar(); shieldActive = true; shieldHp = shieldMaxHp; shieldMesh.visible = true; updateShieldUI(); }
-function respawnPlayer(){ isRespawning = true; playerHp = 0; updatePlayerUI('linear-gradient(#ffd36a,#ffb300)'); const start = performance.now(); function anim(t){ const p = Math.min(1,(t-start)/1500); playerHp = p*playerMaxHp; updatePlayerUI('linear-gradient(#ffd36a,#ffb300)'); if(p<1) requestAnimationFrame(anim); else{ isRespawning = false; updatePlayerUI(); } } resetBoss(); requestAnimationFrame(anim); }
+function respawnPlayer(){if(isRespawning)return;isRespawning=true;playerHp=0;updatePlayerUI('linear-gradient(#ffd36a,#ffb300)');const start=performance.now();function anim(t){const p=Math.min(1,(t-start)/1500);playerHp=p*playerMaxHp;updatePlayerUI('linear-gradient(#ffd36a,#ffb300)');if(p<1)requestAnimationFrame(anim);else{isRespawning=false;updatePlayerUI();}}requestAnimationFrame(anim);}
 
 // ---------------- Shield ----------------
-let shieldMaxHp = 10; let shieldHp = shieldMaxHp; let shieldActive = true; let shieldRegenTimer = 0; const shieldCooldown = 10; const shieldGeom = new THREE.SphereGeometry(7.2, 32, 24); const shieldMat = new THREE.MeshStandardMaterial({color:0x3388ff,transparent:true,opacity:0.18,emissive:0x2244ff,emissiveIntensity:0.4}); const shieldMesh = new THREE.Mesh(shieldGeom, shieldMat); boss.add(shieldMesh); const shieldHud = document.getElementById('shieldHud'); const shieldBar = document.getElementById('shieldBar'); function updateShieldUI(){ if(!shieldActive){ shieldHud.style.display='none'; drawPlayerVRHud(); return; } shieldHud.style.display='block'; shieldBar.style.width = (shieldHp/shieldMaxHp*100)+'%'; drawPlayerVRHud(); } updateShieldUI(); updatePlayerUI();
+let shieldMaxHp = 10; let shieldHp = shieldMaxHp; let shieldActive = true; let shieldRegenTimer = 0; const shieldCooldown = 10; const shieldGeom = new THREE.SphereGeometry(7.2, 32, 24); const shieldMat = new THREE.MeshStandardMaterial({color:0x3388ff,transparent:true,opacity:0.18,emissive:0x2244ff,emissiveIntensity:0.4}); const shieldMesh = new THREE.Mesh(shieldGeom, shieldMat); boss.add(shieldMesh); const shieldHud = document.getElementById('shieldHud'); const shieldBar = document.getElementById('shieldBar'); function updateShieldUI(){ if(!shieldActive){ shieldHud.style.display='none'; drawPlayerVRHud(); if(typeof bossHudCtx!=='undefined'&&bossHudCtx)drawBossWorldHud(); return; } shieldHud.style.display='block'; shieldBar.style.width = (shieldHp/shieldMaxHp*100)+'%'; drawPlayerVRHud(); if(typeof bossHudCtx!=='undefined'&&bossHudCtx)drawBossWorldHud(); } updateShieldUI(); updatePlayerUI();
 
 // ---------------- Player bullets ----------------
 const bullets = []; const bulletSpeed = 110; const bulletDamage = 5; const fireInterval = 1/3; let fireTimer = 0; let isShooting = false; let continuousShootTime = 0; let needsReload = false; const maxContinuous = 5; window.addEventListener('mousedown',e=>{ if(document.pointerLockElement===renderer.domElement && e.button===0 && !needsReload) isShooting=true; }); window.addEventListener('mouseup',e=>{ if(e.button===0) isShooting=false; }); window.addEventListener('keydown',e=>{ if(e.code==='KeyR' && needsReload){ playSfx(reloadSnd,0.9); needsReload=false; continuousShootTime=0; document.getElementById('reloadMsg').style.display='none'; } });
@@ -291,7 +299,7 @@ const bossProjectiles = []; const bossFireInterval = 1.3; let bossFireTimer = 0;
 function getBossAimTarget(){ const target=new THREE.Vector3(); playerRig.getWorldPosition(target); target.y += 1.35 + jumpHeight; return target; }
 function spawnBossProjectile(){ playSfx(pulseSnd,0.9); const geom = new THREE.SphereGeometry(0.35,10,10); const mat = new THREE.MeshStandardMaterial({color:0x3399ff,emissive:0x2266ff,emissiveIntensity:0.9}); const mesh = new THREE.Mesh(geom,mat); const start = boss.getWorldPosition(new THREE.Vector3()); const target = getBossAimTarget(); const dir = new THREE.Vector3().subVectors(target,start).normalize(); mesh.position.copy(start).addScaledVector(dir,7.5); scene.add(mesh); bossProjectiles.push({mesh,vel:dir.multiplyScalar(28),life:8}); }
 function spawnBossBurst(){ playSfx(pulseSnd,0.95); const start = boss.getWorldPosition(new THREE.Vector3()); const baseTarget = getBossAimTarget(); for(let i=0;i<5;i++){ const jitter = new THREE.Vector3((Math.random()-0.5)*3.2, (Math.random()-0.5)*1.8, (Math.random()-0.5)*3.2); const target = baseTarget.clone().add(jitter); const dir = new THREE.Vector3().subVectors(target,start).normalize(); const geom = new THREE.SphereGeometry(0.35,10,10); const mat = new THREE.MeshStandardMaterial({color:0x3399ff,emissive:0x2266ff,emissiveIntensity:0.9}); const mesh = new THREE.Mesh(geom,mat); mesh.position.copy(start).addScaledVector(dir,7.5); scene.add(mesh); bossProjectiles.push({mesh,vel:dir.multiplyScalar(30 + Math.random()*6),life:7}); } }
-function updateBossProjectiles(dt){ for(let i=bossProjectiles.length-1;i>=0;i--){ const p = bossProjectiles[i]; p.life -= dt; p.mesh.position.addScaledVector(p.vel,dt); const dist = p.mesh.position.distanceTo(getViewPosition()); if(dist < 1.0 && !isRespawning){ playerHp -= 10; if(playerHp <= 0){ respawnPlayer(); } updatePlayerUI(); scene.remove(p.mesh); bossProjectiles.splice(i,1); continue; } if(p.life<=0){ scene.remove(p.mesh); bossProjectiles.splice(i,1); } } }
+function updateBossProjectiles(dt){ for(let i=bossProjectiles.length-1;i>=0;i--){ const p=bossProjectiles[i];p.life-=dt;const previous=p.mesh.position.clone();p.mesh.position.addScaledVector(p.vel,dt);const segment=p.mesh.position.clone().sub(previous);const lenSq=segment.lengthSq();const target=getViewPosition();const toTarget=target.clone().sub(previous);const t=lenSq>0?THREE.MathUtils.clamp(toTarget.dot(segment)/lenSq,0,1):0;const closest=previous.addScaledVector(segment,t);const dist=closest.distanceTo(target);if(dist<1.35&&!isRespawning){playerHp=Math.max(0,playerHp-10);updatePlayerUI();scene.remove(p.mesh);bossProjectiles.splice(i,1);if(playerHp<=0)respawnPlayer();continue;}if(p.life<=0){scene.remove(p.mesh);bossProjectiles.splice(i,1);}} }
 
 // ---------------- Game loop ----------------
 const clock = new THREE.Clock(); function animate(){ const dt = Math.min(clock.getDelta(),0.05); if(endSequence){ endTimer += dt; boss.rotation.y += dt*12; boss.position.y -= dt*6; if(endTimer>0.6){ // flash & teleport
