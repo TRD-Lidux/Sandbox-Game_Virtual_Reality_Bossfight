@@ -189,6 +189,21 @@ function setupXRControllerHands(){
  }
 }
 setupXRControllerHands();
+// Harmless controller-direction indicator for checking WebXR tracking.
+const xrPointerGeometry = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3(0,0,-5)]);
+const xrPointerLine = new THREE.Line(xrPointerGeometry, new THREE.LineBasicMaterial({color:0x55ffbb, transparent:true, opacity:0.9, depthTest:false}));
+xrPointerLine.visible = false; xrPointerLine.renderOrder = 1001; scene.add(xrPointerLine);
+const xrPointerDot = new THREE.Mesh(new THREE.SphereGeometry(0.075, 12, 10), new THREE.MeshBasicMaterial({color:0x55ffbb, depthTest:false}));
+xrPointerDot.visible = false; xrPointerDot.renderOrder = 1002; scene.add(xrPointerDot);
+function updateXRPointer(){
+  if(!renderer.xr.isPresenting || !xrControllers.right){ xrPointerLine.visible=false; xrPointerDot.visible=false; return; }
+  const controller=xrControllers.right; controller.updateWorldMatrix(true,false);
+  const origin=new THREE.Vector3(); controller.getWorldPosition(origin);
+  const direction=new THREE.Vector3(0,0,-1).applyQuaternion(controller.getWorldQuaternion(new THREE.Quaternion())).normalize();
+  const end=origin.clone().addScaledVector(direction,5);
+  xrPointerGeometry.setFromPoints([origin,end]); xrPointerGeometry.attributes.position.needsUpdate=true;
+  xrPointerLine.visible=true; xrPointerDot.visible=true; xrPointerDot.position.copy(end);
+}
 
 function deadzone(v){ return Math.abs(v)<0.16 ? 0 : Math.sign(v)*((Math.abs(v)-0.16)/0.84); }
 function getViewCamera(){
@@ -274,7 +289,7 @@ const playerHudSprite=new THREE.Sprite(new THREE.SpriteMaterial({map:playerHudTe
 playerHudSprite.position.set(0,-0.32,-1.35); playerHudSprite.scale.set(0.9,0.42,1); playerHudSprite.renderOrder=1001; playerHudSprite.visible=false; camera.add(playerHudSprite);
 function drawPlayerVRHud(){if(!playerHudCtx)return;const c=playerHudCtx,w=playerHudCanvas.width,h=playerHudCanvas.height,p=Math.max(0,Math.min(1,playerHp/playerMaxHp));c.clearRect(0,0,w,h);c.fillStyle='rgba(0,0,0,.84)';c.beginPath();if(c.roundRect)c.roundRect(8,8,w-16,h-16,24);else c.rect(8,8,w-16,h-16);c.fill();c.font='bold 34px system-ui,sans-serif';c.textAlign='left';c.textBaseline='middle';c.fillStyle='#fff';c.fillText('SHIELD',28,43);c.textAlign='right';c.fillText((shieldActive?Math.max(0,Math.floor(shieldHp)):0)+' / '+shieldMaxHp,w-28,43);c.fillStyle='#0a1630';c.fillRect(28,66,w-56,38);const sp=shieldActive?Math.max(0,Math.min(1,shieldHp/shieldMaxHp)):0;const sg=c.createLinearGradient(28,0,w-28,0);sg.addColorStop(0,'#2788ff');sg.addColorStop(1,'#9be6ff');c.fillStyle=sg;c.fillRect(28,66,(w-56)*sp,38);c.strokeStyle='#a9d9ff';c.lineWidth=2;c.strokeRect(28,66,w-56,38);c.font='bold 34px system-ui,sans-serif';c.textAlign='left';c.fillStyle='#fff';c.fillText('PLAYER HEALTH',28,151);c.textAlign='right';c.fillText(Math.max(0,Math.floor(playerHp))+' / '+playerMaxHp,w-28,151);c.fillStyle='#451010';c.fillRect(28,177,w-56,66);const g=c.createLinearGradient(28,0,w-28,0);g.addColorStop(0,'#ff3333');g.addColorStop(1,'#ff9b3b');c.fillStyle=g;c.fillRect(28,177,(w-56)*p,66);c.strokeStyle='#fff';c.lineWidth=3;c.strokeRect(28,177,w-56,66);playerHudTexture.needsUpdate=true;}
 let playerMaxHp = 100; let playerHp = playerMaxHp; let isRespawning = false; const playerBar = document.getElementById('playerBar'); const playerHpText = document.getElementById('playerHpText'); function updatePlayerUI(colorOverride=null){ const pct = Math.max(0,playerHp/playerMaxHp)*100; playerBar.style.height = pct+'%'; if(colorOverride) playerBar.style.background = colorOverride; else playerBar.style.background = 'linear-gradient(#ff4444,#aa0000)'; playerHpText.textContent = 'HP: '+Math.floor(playerHp); if(typeof playerHudTexture!=='undefined') drawPlayerVRHud(); } function resetBoss(){ bossHp = bossMaxHp; updateBossBar(); shieldActive = true; shieldHp = shieldMaxHp; shieldMesh.visible = true; updateShieldUI(); }
-function respawnPlayer(){if(isRespawning)return;isRespawning=true;playerHp=playerMaxHp;bossHp=bossMaxHp;shieldActive=true;shieldHp=shieldMaxHp;shieldMesh.visible=true;bossFireTimer=0;burstAccumulator=0;shieldRegenTimer=0;for(const q of bossProjectiles){scene.remove(q.mesh);}bossProjectiles.length=0;for(const b of bullets){scene.remove(b.mesh);}bullets.length=0;needsReload=false;continuousShootTime=0;fireTimer=0;isShooting=false;document.getElementById('reloadMsg').style.display='none';updatePlayerUI();updateBossBar();updateShieldUI();isRespawning=false;}
+function respawnPlayer(){if(isRespawning)return;isRespawning=true;playerHp=playerMaxHp;bossHp=bossMaxHp;shieldActive=true;shieldHp=shieldMaxHp;shieldMesh.visible=true;boss.visible=true;boss.position.set(0,22,0);boss.rotation.set(0,0,0);endSequence=false;deathHandled=false;endTimer=0;bossFireTimer=0;burstAccumulator=0;shieldRegenTimer=0;for(const q of bossProjectiles){scene.remove(q.mesh);}bossProjectiles.length=0;for(const b of bullets){scene.remove(b.mesh);}bullets.length=0;needsReload=false;continuousShootTime=0;fireTimer=0;isShooting=false;document.getElementById('reloadMsg').style.display='none';updatePlayerUI();updateBossBar();updateShieldUI();isRespawning=false;}
 
 // ---------------- Shield ----------------
 let shieldMaxHp = 10; let shieldHp = shieldMaxHp; let shieldActive = true; let shieldRegenTimer = 0; const shieldCooldown = 10; const shieldGeom = new THREE.SphereGeometry(7.2, 32, 24); const shieldMat = new THREE.MeshStandardMaterial({color:0x3388ff,transparent:true,opacity:0.18,emissive:0x2244ff,emissiveIntensity:0.4}); const shieldMesh = new THREE.Mesh(shieldGeom, shieldMat); boss.add(shieldMesh); const shieldHud = document.getElementById('shieldHud'); const shieldBar = document.getElementById('shieldBar'); function updateShieldUI(){ if(!shieldActive){ shieldHud.style.display='none'; drawPlayerVRHud(); if(typeof bossHudCtx!=='undefined'&&bossHudCtx)drawBossWorldHud(); return; } shieldHud.style.display='block'; shieldBar.style.width = (shieldHp/shieldMaxHp*100)+'%'; drawPlayerVRHud(); if(typeof bossHudCtx!=='undefined'&&bossHudCtx)drawBossWorldHud(); } updateShieldUI(); updatePlayerUI(); updateBossBar();
@@ -302,7 +317,7 @@ function spawnBossBurst(){ playSfx(pulseSnd,0.95); const start = boss.getWorldPo
 function updateBossProjectiles(dt){ for(let i=bossProjectiles.length-1;i>=0;i--){ const p=bossProjectiles[i];p.life-=dt;const previous=p.mesh.position.clone();p.mesh.position.addScaledVector(p.vel,dt);const segment=p.mesh.position.clone().sub(previous);const lenSq=segment.lengthSq();const target=getViewPosition();const bodyTarget=new THREE.Vector3();playerRig.getWorldPosition(bodyTarget);bodyTarget.y+=1.05+jumpHeight;const toTarget=target.clone().sub(previous);const t=lenSq>0?THREE.MathUtils.clamp(toTarget.dot(segment)/lenSq,0,1):0;const closest=previous.addScaledVector(segment,t);const dist=Math.min(closest.distanceTo(target),closest.distanceTo(bodyTarget));if(dist<1.65&&!isRespawning){playerHp=Math.max(0,playerHp-10);updatePlayerUI();scene.remove(p.mesh);bossProjectiles.splice(i,1);if(playerHp<=0)respawnPlayer();continue;}if(p.life<=0){scene.remove(p.mesh);bossProjectiles.splice(i,1);}} }
 
 // ---------------- Game loop ----------------
-const clock = new THREE.Clock(); function animate(){ const dt = Math.min(clock.getDelta(),0.05); if(endSequence){ endTimer += dt; boss.rotation.y += dt*12; boss.position.y -= dt*6; if(endTimer>0.6){ // flash & teleport
+const clock = new THREE.Clock(); function animate(){ const dt = Math.min(clock.getDelta(),0.05); updateXRPointer(); if(endSequence){ endTimer += dt; boss.rotation.y += dt*12; boss.position.y -= dt*6; if(endTimer>0.6){ // flash & teleport
     const f = document.getElementById('flash');
     f.style.transition='opacity 0.12s linear';
     f.style.opacity='1';
