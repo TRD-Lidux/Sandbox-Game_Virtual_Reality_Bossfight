@@ -189,24 +189,24 @@ function setupXRControllerHands(){
  }
 }
 setupXRControllerHands();
-// Controller-local pointer: follows the right target-ray controller directly,
-// so its origin and direction stay attached to the tracked controller pose.
+// Harmless controller pointer, attached directly to the right WebXR controller.
+// Keeping the ray in controller-local space prevents it drifting to the world origin/ground.
 const xrPointerGroup = new THREE.Group();
 const xrPointerGeometry = new THREE.BufferGeometry().setFromPoints([
-  new THREE.Vector3(0,0,0), new THREE.Vector3(0,0,-8)
+  new THREE.Vector3(0,0,0), new THREE.Vector3(0,0,-5)
 ]);
 const xrPointerLine = new THREE.Line(
   xrPointerGeometry,
-  new THREE.LineBasicMaterial({color:0x00ffcc, transparent:true, opacity:1, depthTest:false, depthWrite:false})
+  new THREE.LineBasicMaterial({color:0x55ffbb, transparent:true, opacity:0.95, depthTest:false})
 );
 xrPointerLine.frustumCulled = false;
 xrPointerLine.renderOrder = 1001;
 xrPointerGroup.add(xrPointerLine);
 const xrPointerDot = new THREE.Mesh(
-  new THREE.SphereGeometry(0.09,16,12),
-  new THREE.MeshBasicMaterial({color:0x00ffcc, depthTest:false, depthWrite:false})
+  new THREE.SphereGeometry(0.075,12,10),
+  new THREE.MeshBasicMaterial({color:0x55ffbb, depthTest:false})
 );
-xrPointerDot.position.set(0,0,-8);
+xrPointerDot.position.set(0,0,-5);
 xrPointerDot.renderOrder = 1002;
 xrPointerGroup.add(xrPointerDot);
 xrPointerGroup.visible = false;
