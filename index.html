@@ -189,30 +189,30 @@ function setupXRControllerHands(){
  }
 }
 setupXRControllerHands();
-// Controller-local pointer, following the same target-ray convention as the
-// working Sandbox VR implementation. Keeping it parented to the controller
-// avoids world-space pose drift and makes its -Z direction explicit.
+// Controller-local pointer: follows the right target-ray controller directly,
+// so its origin and direction stay attached to the tracked controller pose.
 const xrPointerGroup = new THREE.Group();
+const xrPointerGeometry = new THREE.BufferGeometry().setFromPoints([
+  new THREE.Vector3(0,0,0), new THREE.Vector3(0,0,-8)
+]);
 const xrPointerLine = new THREE.Line(
-  new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0,0,-0.08), new THREE.Vector3(0,0,-8)]),
-  new THREE.LineBasicMaterial({color:0x55ffbb, transparent:true, opacity:0.95, depthTest:false})
+  xrPointerGeometry,
+  new THREE.LineBasicMaterial({color:0x00ffcc, transparent:true, opacity:1, depthTest:false, depthWrite:false})
 );
 xrPointerLine.frustumCulled = false;
 xrPointerLine.renderOrder = 1001;
 xrPointerGroup.add(xrPointerLine);
 const xrPointerDot = new THREE.Mesh(
-  new THREE.SphereGeometry(0.075, 12, 10),
-  new THREE.MeshBasicMaterial({color:0x55ffbb, depthTest:false, depthWrite:false})
+  new THREE.SphereGeometry(0.09,16,12),
+  new THREE.MeshBasicMaterial({color:0x00ffcc, depthTest:false, depthWrite:false})
 );
 xrPointerDot.position.set(0,0,-8);
 xrPointerDot.renderOrder = 1002;
 xrPointerGroup.add(xrPointerDot);
 xrPointerGroup.visible = false;
-if (xrControllers.right) xrControllers.right.add(xrPointerGroup);
+if(xrControllers.right) xrControllers.right.add(xrPointerGroup);
 function updateXRPointer(){
-  const active = renderer.xr.isPresenting && !!xrControllers.right;
-  xrPointerGroup.visible = active;
-  if(active) xrControllers.right.updateWorldMatrix(true,true);
+  xrPointerGroup.visible = !!(renderer.xr.isPresenting && xrControllers.right);
 }
 
 function deadzone(v){ return Math.abs(v)<0.16 ? 0 : Math.sign(v)*((Math.abs(v)-0.16)/0.84); }
